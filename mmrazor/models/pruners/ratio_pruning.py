@@ -26,6 +26,8 @@ class RatioPruner(StructurePruner):
 
     def __init__(self, ratios, **kwargs):
         super(RatioPruner, self).__init__(**kwargs)
+        assert len(ratios) == self.channel_bins, \
+            'The length of the ``ratios`` should be equal to ``channel_bins``'
         ratios = list(ratios)
         ratios.sort()
         self.ratios = ratios
@@ -43,6 +45,15 @@ class RatioPruner(StructurePruner):
 
         return new_out_mask
 
+    def channel_bin2channel(self, channel_bin_mask, out_mask):
+        out_channels = out_mask.size(1)
+        ratio = self.ratios[channel_bin_mask.sum().item() - 1]
+        new_channels = int(round(out_channels * ratio))
+        new_out_mask = torch.zeros_like(out_mask)
+        new_out_mask[:, :new_channels] = 1
+
+        return new_out_mask
+
     def sample_subnet(self):
         """Random sample subnet by random mask.
 
@@ -52,23 +63,20 @@ class RatioPruner(StructurePruner):
                 spaces, and its values are corresponding sampled out_mask.
         """
         subnet_dict = dict()
-        for space_id, out_mask in self.channel_spaces.items():
-            subnet_dict[space_id] = self.get_channel_mask(out_mask)
+        for space_id, channel_bin_mask in self.search_spaces.items():
+            num_channel_bin = np.random.randint(1, self.channel_bins + 1)
+            new_channel_bin_mask = torch.zeros_like(channel_bin_mask)
+            new_channel_bin_mask[:num_channel_bin] = 1
+            subnet_dict[space_id] = new_channel_bin_mask
         return subnet_dict
 
     def set_min_channel(self):
         """Set the number of channels each layer to minimum."""
         subnet_dict = dict()
-        for space_id, out_mask in self.channel_spaces.items():
-            out_channels = out_mask.size(1)
-            random_ratio = self.min_ratio
-            new_channels = int(round(out_channels * random_ratio))
-            assert new_channels > 0, \
-                'Output channels should be a positive integer.'
-            new_out_mask = torch.zeros_like(out_mask)
-            new_out_mask[:, :new_channels] = 1
-
-            subnet_dict[space_id] = new_out_mask
+        for space_id, channel_bin_mask in self.search_spaces.items():
+            new_channel_bin_mask = torch.zeros_like(channel_bin_mask)
+            new_channel_bin_mask[0] = 1
+            subnet_dict[space_id] = new_channel_bin_mask
 
         self.set_subnet(subnet_dict)
 

@@ -82,8 +82,9 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
             string in except_start_keys will not be prune.
     """
 
-    def __init__(self, except_start_keys=['head.fc']):
+    def __init__(self, channel_bins, except_start_keys=['head.fc']):
         super(StructurePruner, self).__init__()
+        self.channel_bins = channel_bins
         if except_start_keys is None:
             self.except_start_keys = list()
         else:
@@ -149,7 +150,7 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
                 if name in name2module:
                     self.modules_have_child.add(name)
 
-        self.channel_spaces = self.build_channel_spaces(name2module)
+        self.search_spaces = self.build_search_spaces(name2module)
 
     @abstractmethod
     def sample_subnet(self):
@@ -201,7 +202,11 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
             space_id = module_name
         return space_id
 
-    def set_subnet(self, subnet_dict):
+    @abstractmethod
+    def channel_bin2channel(self, channel_bin_mask, out_mask):
+        pass
+
+    def set_subnet(self, subnet_dict, ):
         """Modify the in_mask and out_mask of modules in supernet according to
         subnet_dict.
 
@@ -212,7 +217,9 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
         for module_name in self.modules_have_child:
             space_id = self.get_space_id(module_name)
             module = self.name2module[module_name]
-            module.out_mask = subnet_dict[space_id].to(module.out_mask.device)
+            out_mask = self.channel_bin2channel(
+                subnet_dict[space_id], module.out_mask)
+            module.out_mask = out_mask.to(module.out_mask.device)
 
         for bn, conv in self.bn_conv_links.items():
             module = self.name2module[bn]
@@ -221,8 +228,9 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
             # this bn module can not be pruned. So we should not set
             # the out_mask of this bn layer
             if conv_space_id is not None:
-                module.out_mask = subnet_dict[conv_space_id].to(
-                    module.out_mask.device)
+                out_mask = self.channel_bin2channel(
+                    subnet_dict[conv_space_id], module.out_mask)
+                module.out_mask = out_mask.to(module.out_mask.device)
 
         for module_name in self.modules_have_ancest:
             module = self.name2module[module_name]
@@ -240,12 +248,15 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
                 if 'concat' in space_id:
                     in_mask = []
                     for parent_space_id in space_id['concat']:
-                        in_mask.append(subnet_dict[parent_space_id])
+                        parent_out_mask = self.channel_bin2channel(
+                            subnet_dict[parent_space_id], self.space_id2out_mask[parent_space_id])
+                        in_mask.append(parent_out_mask)
                     module.in_mask = torch.cat(
                         in_mask, dim=1).to(module.in_mask.device)
             else:
-                module.in_mask = subnet_dict[space_id].to(
-                    module.in_mask.device)
+                parent_out_mask = self.channel_bin2channel(
+                    subnet_dict[space_id], self.space_id2out_mask[space_id])
+                module.in_mask = parent_out_mask.to(module.in_mask.device)
 
     def export_subnet(self):
         """Generate subnet configs according to the in_mask and out_mask of a
@@ -271,9 +282,8 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
     def set_max_channel(self):
         """Set the number of channels each layer to maximum."""
         subnet_dict = dict()
-        for space_id, out_mask in self.channel_spaces.items():
-            new_out_mask = torch.ones_like(out_mask)
-            subnet_dict[space_id] = new_out_mask
+        for space_id, channel_bin_mask in self.search_spaces.items():
+            subnet_dict[space_id] = torch.ones_like(channel_bin_mask)
         self.set_subnet(subnet_dict)
 
     @abstractmethod
@@ -435,7 +445,7 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
                 node2parents[leaf_name] = OrderedSet()
         return node2parents
 
-    def build_channel_spaces(self, name2module):
+    def build_search_spaces(self):
         """Build channel search space.
 
         Args:
@@ -445,7 +455,9 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
             dict: The channel search space. The key is space_id and the value
                 is the corresponding out_mask.
         """
-        search_space = dict()
+        search_spaces = dict()
+
+        self.space_id2out_mask = dict()
 
         for module_name in self.modules_have_child:
             need_prune = True
@@ -459,11 +471,13 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
                 space_id = self.module2group[module_name]
             else:
                 space_id = module_name
-            module = name2module[module_name]
-            if space_id not in search_space:
-                search_space[space_id] = module.out_mask
+            if space_id not in search_spaces:
+                search_spaces[space_id] = torch.ones(self.channel_bins)
 
-        return search_space
+                module = self.name2module[module_name]
+                self.space_id2out_mask[space_id] = module.out_mask
+
+        return search_spaces
 
     def deploy_subnet(self, supernet, channel_cfg):
         """Deploy subnet according `channel_cfg`."""
@@ -519,7 +533,7 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
             max_channel_bins (int): The max number of bins in each layer.
         """
         channel_bins_dict = dict()
-        for space_id in self.channel_spaces.keys():
+        for space_id in self.search_spaces.keys():
             channel_bins_dict[space_id] = torch.ones((max_channel_bins, ))
         return channel_bins_dict
 
@@ -534,7 +548,7 @@ class StructurePruner(BaseModule, metaclass=ABCMeta):
         """
         subnet_dict = dict()
         for space_id, bin_mask in channel_bins_dict.items():
-            mask = self.channel_spaces[space_id]
+            mask = self.search_spaces[space_id]
             shape = mask.shape
             channel_num = shape[1]
             channels_per_bin = channel_num // max_channel_bins

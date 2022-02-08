@@ -41,7 +41,7 @@ def test_ratio_pruner():
     pruner = PRUNERS.build(pruner_cfg)
 
     pruner.prepare_from_supernet(architecture)
-    assert hasattr(pruner, 'channel_spaces')
+    assert hasattr(pruner, 'search_spaces')
 
     # test set_min_channel
     pruner_cfg_ = deepcopy(pruner_cfg)
