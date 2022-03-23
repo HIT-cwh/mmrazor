@@ -19,10 +19,14 @@ class RelationalKD(nn.Module):
             Defaults to 50.0.
     """
 
-    def __init__(self, loss_weight_d=25.0, loss_weight_a=50.0):
+    def __init__(self,
+                 loss_weight_d=25.0,
+                 loss_weight_a=50.0,
+                 l2_norm=True):
         super(RelationalKD, self).__init__()
         self.loss_weight_d = loss_weight_d
         self.loss_weight_a = loss_weight_a
+        self.l2_norm = l2_norm
 
     def euclidean_distance(self, pred, squared=False, eps=1e-12):
         """Calculate the Euclidean distance between the two examples in the
@@ -91,6 +95,9 @@ class RelationalKD(nn.Module):
         """
         preds_S = preds_S.view(preds_S.shape[0], -1)
         preds_T = preds_T.view(preds_T.shape[0], -1)
+        if self.l2_norm:
+            preds_S = F.normalize(preds_S, p=2, dim=-1)
+            preds_T = F.normalize(preds_T, p=2, dim=-1)
         loss_d = self.distance_loss(preds_S, preds_T)
         loss_a = self.angle_loss(preds_S, preds_T)
         loss = self.loss_weight_d * loss_d + self.loss_weight_a * loss_a
