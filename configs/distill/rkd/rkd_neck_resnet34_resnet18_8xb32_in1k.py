@@ -63,7 +63,8 @@ algorithm = dict(
                         type='RelationalKD',
                         name='loss_rkd',
                         loss_weight_d=25.0,
-                        loss_weight_a=50.0)
+                        loss_weight_a=50.0,
+                        l2_norm=False)
                 ])
         ]),
 )
