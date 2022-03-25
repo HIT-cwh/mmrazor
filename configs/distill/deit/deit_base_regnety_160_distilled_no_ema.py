@@ -90,8 +90,6 @@ paramwise_cfg = dict(
     })
 optimizer = dict(paramwise_cfg=paramwise_cfg)
 
-custom_hooks = [dict(type='EMAHook', momentum=4e-5, priority='ABOVE_NORMAL')]
-
 checkpoint_config = dict(interval=1, max_keep_ckpts=3, out_dir='s3://caoweihan/deit')
 evaluation = dict(interval=1, metric='accuracy', save_best='accuracy_top-1')
 
