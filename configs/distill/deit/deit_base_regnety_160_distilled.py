@@ -43,13 +43,19 @@ teacher = dict(
         type='LinearClsHead',
         num_classes=1000,
         in_channels=3024,
-        loss=dict(type='CrossEntropyLoss', loss_weight=1.),
+        loss=dict(
+            type='LabelSmoothLoss', label_smooth_val=0.1, mode='original',
+            loss_weight=0.5),
         topk=(1, 5),
         init_cfg=dict(
             type='Pretrained',
             checkpoint='/mnt/lustre/caoweihan/checkpoint/cls/regnety_160-a5fe301d.pth',
             prefix='head.'),
-    ))
+    ),
+    train_cfg=dict(augments=[
+        dict(type='BatchMixup', alpha=0.8, num_classes=1000, prob=0.5),
+        dict(type='BatchCutMix', alpha=1.0, num_classes=1000, prob=0.5)
+    ]))
 
 # algorithm setting
 algorithm = dict(
@@ -61,21 +67,38 @@ algorithm = dict(
     with_student_loss=True,
     with_teacher_loss=False,
     distiller=dict(
-        type='SingleTeacherDistiller',
+        type='SingleTeacherDistillerV2',
         teacher=teacher,
         teacher_trainable=False,
         teacher_norm_eval=True,
+        student_recorders=[
+            dict(
+                type='ModuleOutputs',
+                sources=['head.layers.head_dist'])
+        ],
+        teacher_recorders=[
+            dict(
+                type='ModuleOutputs',
+                sources=['head.fc'])
+        ],
         components=[
             dict(
-                student_module='head.layers.head_dist',
-                teacher_module='head.fc',
-                losses=[
-                    dict(
-                        type='CrossEntropyLoss',
-                        name='loss_deit',
-                        loss_weight=0.5)
-                ])
-        ]),
+                student_items=[
+                    dict(record_type='ModuleOutputs', source='head.layers.head_dist')
+                ],
+                teacher_items=[
+                    dict(record_type='ModuleOutputs', source='head.fc')
+                ],
+                loss=dict(
+                    type='CrossEntropyLoss',
+                    loss_weight=0.5
+                )),
+        ],
+        distill_deliveries=(
+            dict(type='MethodOutputs', max_keep_data=1, source='teacher',
+                 target='student', method='Augments.__call__',
+                 import_module='mmcls.models.utils'), )
+    ),
 )
 
 # data settings
