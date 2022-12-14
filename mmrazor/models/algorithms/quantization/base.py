@@ -48,7 +48,8 @@ class MMArchitectureQuant(BaseAlgorithm):
                  forward_modes = ('tensor', 'predict', 'loss'),
                  float_checkpoint: Optional[str] = None,
                  input_shapes=(1, 3, 224, 224),
-                 init_cfg=None):
+                 init_cfg=None,
+                 debug_ckpt=None):
 
         if data_preprocessor is None:
             data_preprocessor = {}
@@ -63,6 +64,9 @@ class MMArchitectureQuant(BaseAlgorithm):
         self.forward_modes = forward_modes
 
         self.qmodels = self._build_qmodels(self.architecture)
+
+        if debug_ckpt:
+            _ = load_checkpoint(self.qmodels['predict'], debug_ckpt)
 
         self.sync_qparams('predict')
 

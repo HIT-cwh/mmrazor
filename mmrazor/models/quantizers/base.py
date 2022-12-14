@@ -47,7 +47,7 @@ MERGE_BN_MAPPINGS = {
 MODULE_DEL_PREV_FAKEQUANT = (nn.ReLU6, nn.Identity)
 MODULE_DEL_NEXT_FAKEQUANT = (nn.MaxPool2d, )
 TARGET_DEL_PREV_FAKEQUANT = ('output', )
-TARGET_DEL_NEXT_FAKEQUANT = ('flatten', )
+TARGET_DEL_NEXT_FAKEQUANT = tuple()
 
 def _get_attrs(target, attrs):
     attrs = attrs.split('.')
@@ -285,7 +285,6 @@ class WithDeployQuantizer(BaseQuantizer):
         self.no_observer_modules = str2class(no_observer_modules)
         self.qconfig_mapping = QConfigMapping().set_global(self.qconfig.convert())
         for mod in self.no_observer_modules:
-            import pdb; pdb.set_trace()
             self.qconfig_mapping.set_object_type(mod, None)
         self.backend_config = BackendConfigs[self.backend]
         self.example_inputs = (torch.randn(1, 3, 224, 224),)

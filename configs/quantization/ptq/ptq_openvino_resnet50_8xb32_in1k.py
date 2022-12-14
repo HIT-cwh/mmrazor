@@ -24,6 +24,7 @@ model = dict(
     type='mmrazor.MMArchitectureQuant',
     architecture=_base_.model,
     float_checkpoint=r'G:\projects\research\checkpoint\resnet50_8xb32_in1k_20210831-ea4938fc.pth',# '/mnt/petrelfs/caoweihan.p/ckpt/resnet50_8xb32_in1k_20210831-ea4938fc.pth',
+    debug_ckpt='/mnt/cache/caoweihan.p/projects/mmrazor_quant/new_ckpt.pth',
     quantizer=dict(
         type='mmrazor.OpenVINOQuantizer',
         global_qconfig=global_qconfig,
