@@ -43,6 +43,9 @@ class SingleTeacherDistillValLoop(ValLoop):
             self.teacher = self.runner.model.teacher
             self.teacher.data_preprocessor = data_preprocessor
 
+        # We only compute teacher metrics at the first time
+        self.is_first_time = True
+
     def run(self):
         """Launch validation."""
         self.runner.call_hook('before_val')
@@ -52,30 +55,21 @@ class SingleTeacherDistillValLoop(ValLoop):
             self.run_iter(idx, data_batch)
         # compute student metrics
         metrics = self.evaluator.evaluate(len(self.dataloader.dataset))
-        student_metrics = dict()
-        for key, value in metrics.items():
-            student_key = 'student.' + key
-            teacher_key = 'teacher.' + key
 
-            student_metrics[student_key] = value
-            self.runner.message_hub.log_scalars.pop(f'val/{teacher_key}', None)
+        if self.is_first_time:
+            self.runner.call_hook('before_val_epoch')
+            for idx, data_batch in enumerate(self.dataloader):
+                self.run_iter_teacher(idx, data_batch)
+            # compute teacher metrics
+            teacher_metrics = self.evaluator.evaluate(
+                len(self.dataloader.dataset))
+            for key, value in teacher_metrics.items():
+                teacher_key = 'teacher.' + key
+                metrics[teacher_key] = value
 
-        self.runner.call_hook('after_val_epoch', metrics=student_metrics)
+            self.is_first_time = False
 
-        self.runner.call_hook('before_val_epoch')
-        for idx, data_batch in enumerate(self.dataloader):
-            self.run_iter_teacher(idx, data_batch)
-        # compute teacher metrics
-        metrics = self.evaluator.evaluate(len(self.dataloader.dataset))
-        teacher_metrics = dict()
-        for key, value in metrics.items():
-            student_key = 'student.' + key
-            teacher_key = 'teacher.' + key
-
-            teacher_metrics[teacher_key] = value
-            self.runner.message_hub.log_scalars.pop(f'val/{student_key}', None)
-
-        self.runner.call_hook('after_val_epoch', metrics=teacher_metrics)
+        self.runner.call_hook('after_val_epoch', metrics=metrics)
         self.runner.call_hook('after_val')
 
     @torch.no_grad()
